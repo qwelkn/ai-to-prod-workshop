@@ -1,10 +1,4 @@
-"""Тонка обгортка над LLM API (Gemini через OpenAI-сумісний endpoint).
-
-Цей файл можна і треба змінювати. Обмеження:
-  * викликайте модель лише через офіційний `openai` SDK (без streaming);
-  * модель беріть з LLM_MODEL — у фінальному прогоні організатори задають її самі;
-  * ключ — тільки зі змінної середовища GEMINI_API_KEY, ніколи не хардкодьте.
-"""
+"""Тонка обгортка над openai SDK (OpenAI-сумісний Gemini). Без streaming."""
 import os
 
 from dotenv import load_dotenv
@@ -18,14 +12,18 @@ BASE_URL = os.getenv("LLM_BASE_URL", "https://generativelanguage.googleapis.com/
 _client = None
 
 
-def get_client() -> OpenAI:
+def _get_client() -> OpenAI:
     global _client
     if _client is None:
-        _client = OpenAI(api_key=os.environ["GEMINI_API_KEY"], base_url=BASE_URL)
+        # max_retries=0: ретраями керуємо самі, щоб тримати бюджет часу
+        _client = OpenAI(api_key=os.getenv("GEMINI_API_KEY", ""), base_url=BASE_URL,
+                         timeout=8.0, max_retries=0)
     return _client
 
 
-def chat(messages, **kwargs) -> str:
-    """Надсилає повідомлення моделі й повертає текст відповіді."""
-    resp = get_client().chat.completions.create(model=MODEL, messages=messages, **kwargs)
-    return resp.choices[0].message.content
+def chat(messages, timeout: float = 8.0, json_mode: bool = False, max_tokens: int = 400) -> str:
+    kwargs = {"model": MODEL, "messages": messages, "temperature": 0, "max_tokens": max_tokens}
+    if json_mode:
+        kwargs["response_format"] = {"type": "json_object"}
+    resp = _get_client().with_options(timeout=timeout).chat.completions.create(**kwargs)
+    return resp.choices[0].message.content or ""
