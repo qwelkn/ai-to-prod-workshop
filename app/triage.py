@@ -1,6 +1,8 @@
 """Надійний triage звернень: LLM + детерміновані правила + евристичний fallback."""
 import json
+import os
 import re
+import sys
 import time
 
 from app.llm import chat  # на рівні модуля: тести підміняють app.triage.chat
@@ -197,14 +199,15 @@ def _call_llm(text: str, deadline: float):
             return None
         try:
             try:
-                raw = chat(msgs, timeout=min(8.0, remaining - 0.5), json_mode=True)
+                raw = chat(msgs, timeout=min(6.0, remaining - 0.5), json_mode=True)
             except TypeError:  # підмінений chat(messages) без додаткових аргументів
                 raw = chat(msgs)
             obj = _extract_json(raw if isinstance(raw, str) else str(raw or ""))
             if obj is not None:
                 return obj
-        except Exception:  # noqa: BLE001
-            pass
+        except Exception as e:  # noqa: BLE001
+            if os.getenv("TRIAGE_DEBUG"):
+                print(f"[triage] спроба {attempt + 1}: {type(e).__name__}: {str(e)[:200]}", file=sys.stderr)
         time.sleep(min(0.6 * (2 ** attempt), max(0.0, deadline - time.monotonic() - 1.5)))
     return None
 
